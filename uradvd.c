@@ -77,6 +77,13 @@ struct __attribute__((__packed__)) nd_opt_rdnss {
 	uint32_t nd_opt_rdnss_lifetime;
 };
 
+struct __attribute__((__packed__)) nd_opt_capid {
+	uint8_t nd_opt_capid_type;
+	uint8_t nd_opt_capid_len;
+	uint8_t nd_opt_capid_uri[62];
+};
+
+
 static struct global {
 	struct iface iface;
 
@@ -88,6 +95,7 @@ static struct global {
 	int rtnl_sock;
 
 	const char *ifname;
+	const char *capid;
 
 	uint16_t adv_default_lifetime;
 
@@ -525,12 +533,21 @@ static void send_advert(void) {
 			memcpy(rdnss_ips[i], G.rdnss[i].s6_addr, 16);
 	}
 
+	struct nd_opt_capid capid = {};
+	if (G.capid) {
+		capid.nd_opt_capid_type = 37;
+		capid.nd_opt_capid_len = 2 + strlen(G.capid);
+		memset(capid.nd_opt_capid_uri, 0, sizeof(capid.nd_opt_capid_uri));
+		memcpy(capid.nd_opt_capid_uri, G.capid, strlen(G.capid));
+	}
+
 	struct iovec vec[5] = {
 		{ .iov_base = &advert, .iov_len = sizeof(advert) },
 		{ .iov_base = &lladdr, .iov_len = sizeof(lladdr) },
 		{ .iov_base = prefixes, .iov_len = sizeof(prefixes) },
 		{ .iov_base = &rdnss, .iov_len = sizeof(rdnss) },
-		{ .iov_base = rdnss_ips, .iov_len = sizeof(rdnss_ips) }
+		{ .iov_base = rdnss_ips, .iov_len = sizeof(rdnss_ips) },
+		{ .iov_base = &capid, .iov_len = G.capid ? sizeof(capid) : 0 }
 	};
 
 	struct sockaddr_in6 addr = {
@@ -634,6 +651,7 @@ static void parse_cmdline(int argc, char *argv[]) {
 	{
 		{"default-lifetime", required_argument, 0, 0},
 		{"rdnss", required_argument, 0, 1},
+		{"capid", required_argument, 0, 2},
 		{0, 0, 0, 0}
 	};
 
@@ -653,6 +671,12 @@ static void parse_cmdline(int argc, char *argv[]) {
 
 		case 1: // --rdnss
 			add_rdnss(optarg);
+			break;
+		
+		case 2: // --capid
+			if (strlen(optarg) > 62)
+				exit_error("CAPID too long\n", 0);
+			G.capid = optarg;
 			break;
 
 		case 'i':
